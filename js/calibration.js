@@ -135,3 +135,16 @@ export function applyCalibration(cal, ref) {
     outOfRange: ref.level < cal.stats.rangeLo - 3 || ref.level > cal.stats.rangeHi + 3,
   };
 }
+
+// The reverse direction: express this device's live reading in the lesson device's numbers,
+// so the practice phone shows what the lesson device would have shown.
+export function toReferenceScale(cal, { level, bands }) {
+  const refBands = bands.map((v, b) => v - cal.bandOffset[b]);
+  const refLevel = (level - cal.level.b) / cal.level.a;
+  return {
+    level: refLevel,
+    bands: refBands,
+    ...metricsFromBands(refBands),
+    outOfRange: refLevel < cal.stats.rangeLo - 3 || refLevel > cal.stats.rangeHi + 3,
+  };
+}

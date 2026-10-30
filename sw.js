@@ -1,10 +1,10 @@
 // Offline support: cache the app files; serve from cache, refresh in the background.
-const VERSION = 'vm-2';
+const VERSION = 'vm-3';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/ui.js', 'js/state.js', 'js/store.js', 'js/dsp.js', 'js/calibration.js',
-  'js/engine.js', 'js/capture-worklet.js', 'js/qr.js', 'js/transfer.js',
-  'js/views/meter.js', 'js/views/exercises.js', 'js/views/calibrate.js', 'js/views/setup.js',
+  'js/calibrate-core.js', 'js/engine.js', 'js/capture-worklet.js', 'js/qr.js', 'js/transfer.js',
+  'js/views/meter.js', 'js/views/calibrate.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png',
 ];
 

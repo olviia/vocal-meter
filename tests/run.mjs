@@ -1,7 +1,7 @@
 // Node tests for the pure modules: node tests/run.mjs
 import { FrameAnalyzer, FFT, summarize, hzToCents, metricsFromBands, NB, BAND_CENTERS } from '../js/dsp.js';
-import { detectSegments, alignSegments, fitCalibration, applyCalibration } from '../js/calibration.js';
-import { pack, unpack, refsPayload, readPayload, defaultState } from '../js/store.js';
+import { detectSegments, alignSegments, fitCalibration, applyCalibration, toReferenceScale } from '../js/calibration.js';
+import { pack, unpack, calPayload, readPayload, defaultState } from '../js/store.js';
 import { encodeQR, totalCodewords, maxBytes } from '../js/qr.js';
 import { writeFileSync } from 'node:fs';
 
@@ -137,6 +137,10 @@ function micAGC(sig) {
   const real = metricsFromBands(segB[5].bands);
   check('converted ring matches device B', Math.abs(conv.ring - real.ring) < 1, `${conv.ring.toFixed(2)} vs ${real.ring.toFixed(2)}`);
   check('converted level matches device B', Math.abs(conv.level - segB[5].level) < 1, `${conv.level.toFixed(2)} vs ${segB[5].level.toFixed(2)}`);
+  const back = toReferenceScale(cal, segB[7]);
+  const realA = metricsFromBands(segA[7].bands);
+  check('phone reading → lesson-device numbers', Math.abs(back.level - segA[7].level) < 1 && Math.abs(back.ring - realA.ring) < 1, `level ${back.level.toFixed(2)} vs ${segA[7].level.toFixed(2)}, ring ${back.ring.toFixed(2)} vs ${realA.ring.toFixed(2)}`);
+  globalThis.__segs = segA;
 }
 {
   const { src, dst } = protocol(micAGC);
@@ -149,11 +153,10 @@ function micAGC(sig) {
 // ---- wire format round trip
 {
   const st = defaultState();
-  st.exercises.push({ id: 'e1', name: 'Ah scale', created: 1, marks: [{ id: 'm1', t: 1761820000000, cents: 5712.3, level: -23.47, bands: new Array(NB).fill(0).map((_, i) => -40 + i * 1.234), dev: st.device }] });
-  const s = await pack(refsPayload(st));
-  const back = readPayload(await unpack(s));
-  const m = back.exercises[0].marks[0];
-  check('pack/unpack refs', back.kind === 'refs' && Math.abs(m.level + 23.5) < 0.06 && m.bands.length === NB, `${s.length} chars`);
+  st.calSession = { at: 1761820000, segments: globalThis.__segs };
+  const str = await pack(calPayload(st));
+  const back = readPayload(await unpack(str));
+  check('pack/unpack calibration', back.segments.length === 12 && Math.abs(back.segments[3].level - globalThis.__segs[3].level) < 0.06, `${str.length} chars`);
 }
 
 // ---- QR: table consistency + matrices for the Python decoder check
