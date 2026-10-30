@@ -19,6 +19,15 @@
   <main id="main"></main>
   <div id="toast" role="status" hidden></div>
   <noscript>Vocal Meter needs JavaScript.</noscript>
+  <script>
+    // Right after an update the hosting cache can briefly serve a mix of old and new files.
+    // If the app hasn't appeared after a few seconds, reload once to pick up a consistent set.
+    setTimeout(function () {
+      if (document.getElementById('main').children.length) return;
+      try { if (sessionStorage.getItem('vm-reloaded')) return; sessionStorage.setItem('vm-reloaded', '1'); } catch (e) {}
+      location.reload();
+    }, 4000);
+  </script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

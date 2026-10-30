@@ -6,6 +6,7 @@ import { mount } from './main.js';
 
 engine.setNoise(S.noise);
 const ui = mount(document.getElementById('main'));
+try { sessionStorage.removeItem('vm-reloaded'); } catch (e) { /* not critical */ }
 
 // The meter is always on while the app is open.
 async function listen() {
