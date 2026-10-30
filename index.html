@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Vocal Meter</title>
+  <meta name="description" content="Loudness, pitch and resonance meter for singing practice.">
+  <meta name="theme-color" content="#1a1424" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f3fb" media="(prefers-color-scheme: light)">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Vocal Meter</h1>
+    <button id="install" class="ghost small" hidden>Install app</button>
+  </header>
+  <main id="main" tabindex="-1"></main>
+  <nav id="nav" aria-label="Sections"></nav>
+  <div id="toast" role="status" hidden></div>
+  <noscript>Vocal Meter needs JavaScript.</noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
