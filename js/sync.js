@@ -14,13 +14,13 @@ const MATCH_WINDOW_S = 15 * 60;
 export const sync = new EventTarget();
 const emit = (type, detail) => sync.dispatchEvent(new CustomEvent(type, { detail }));
 
-let closeSub = null;
+let sub = null, backstop = null;
 
 export async function connect() {
-  closeSub?.(); closeSub = null;
+  sub?.close(); sub = null; clearInterval(backstop);
   if (!S.link) return;
   const topic = await linkTopic(S.link.secret);
-  closeSub = subscribe(topic, Date.now() / 1000 - 2 * MATCH_WINDOW_S, async text => {
+  sub = subscribe(topic, Date.now() / 1000 - 2 * MATCH_WINDOW_S, async text => {
     let m;
     try { m = await unseal(S.link.secret, text); } catch (e) { return; } // not ours / tampered
     if (m.from === S.device.id) return;
@@ -36,7 +36,12 @@ export async function connect() {
       emit('unlinked', { byPeer: true });
     }
   }, state => emit('relay', state));
+  sub.refresh();
+  backstop = setInterval(() => sub?.refresh(), 20000); // light check in case the live stream stalls
 }
+
+// Ask the relay right now for anything we might have missed.
+export const refresh = () => sub?.refresh();
 
 export async function send(obj) {
   if (!S.link) throw new Error('Not linked');
@@ -49,7 +54,7 @@ export async function shareOwnRecording() {
 }
 
 function dropLink() {
-  closeSub?.(); closeSub = null;
+  sub?.close(); sub = null; clearInterval(backstop);
   S.link = null; S.peerSession = null;
   commit();
 }

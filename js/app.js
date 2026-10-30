@@ -1,6 +1,6 @@
 import { engine } from './engine.js';
 import { S } from './state.js';
-import { connect } from './sync.js';
+import { connect, refresh } from './sync.js';
 import { normalizeCode } from './link.js';
 import { mount } from './main.js';
 
@@ -24,7 +24,7 @@ addEventListener('pointerdown', wake);
 addEventListener('keydown', wake);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') engine.stop();
-  else { listen(); engine.wake(); }
+  else { listen(); engine.wake(); refresh(); }
 });
 
 // Linked devices stay connected to their private channel while the app is open.

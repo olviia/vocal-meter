@@ -23,20 +23,44 @@ export async function publish(topic, text) {
   if (!res.ok) throw new Error(`Relay refused the message (${res.status})`);
 }
 
-// Calls onText(text) for every message on the topic since `sinceSec` (unix seconds), once each.
+// One-off fetch of everything on the topic since `sinceSec` (unix seconds).
+export async function poll(topic, sinceSec) {
+  const res = await fetch(`${relayBase()}/${topic}/json?poll=1&since=${Math.floor(sinceSec)}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Relay error ${res.status}`);
+  return (await res.text()).split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } })
+    .filter(m => m && m.event === 'message');
+}
+
+// Calls onText(text) once for every message on the topic since `sinceSec`.
+// A live stream delivers messages instantly; because live streams can silently stall on some
+// networks, the stream is also renewed every minute and the topic is polled as a backstop.
+// Returns { close, refresh } — refresh() polls right away.
 export function subscribe(topic, sinceSec, onText, onState) {
   const seen = new Set();
-  const es = new EventSource(`${relayBase()}/${topic}/sse?since=${Math.floor(sinceSec)}`);
-  es.onopen = () => onState?.('open');
-  es.onerror = () => onState?.('retrying'); // EventSource reconnects by itself
-  es.onmessage = e => {
-    let m;
-    try { m = JSON.parse(e.data); } catch (err) { return; }
+  let es = null, closed = false, last = Math.floor(sinceSec);
+  const deliver = m => {
     if (m.event !== 'message' || seen.has(m.id)) return;
     seen.add(m.id);
+    if (m.time) last = Math.max(last, m.time - 5);
     onText(m.message);
   };
-  return () => es.close();
+  const open = () => {
+    es?.close();
+    es = new EventSource(`${relayBase()}/${topic}/sse?since=${last}`);
+    es.onopen = () => onState?.('open');
+    es.onerror = () => {
+      onState?.('retrying');
+      if (es.readyState === EventSource.CLOSED && !closed) setTimeout(() => { if (!closed) open(); }, 3000);
+    };
+    es.onmessage = e => { try { deliver(JSON.parse(e.data)); } catch (err) { /* ignore */ } };
+  };
+  const refresh = async () => {
+    if (closed) return;
+    try { (await poll(topic, last)).forEach(deliver); } catch (e) { onState?.('offline'); }
+  };
+  open();
+  const renew = setInterval(() => { if (!closed) open(); }, 60000);
+  return { close: () => { closed = true; clearInterval(renew); es?.close(); }, refresh };
 }
 
 // ---------- crypto ----------
@@ -104,10 +128,10 @@ export async function hostPairing(code, me, { signal } = {}) {
   const nonce = uid();
   return new Promise((resolve, reject) => {
     let secret = null, guest = null, done = false;
-    const finish = (err, val) => { if (done) return; done = true; close(); clearTimeout(timer); err ? reject(err) : resolve(val); };
+    const finish = (err, val) => { if (done) return; done = true; sub.close(); clearInterval(poller); clearTimeout(timer); err ? reject(err) : resolve(val); };
     const timer = setTimeout(() => finish(new Error('No device joined within 5 minutes.')), PAIR_TIMEOUT_MS);
     signal?.addEventListener('abort', () => finish(new DOMException('Cancelled', 'AbortError')));
-    const close = subscribe(topic, Date.now() / 1000 - 5, async text => {
+    const sub = subscribe(topic, Date.now() / 1000 - 5, async text => {
       try {
         const m = JSON.parse(text);
         if (m.t === 'hello' && !guest && m.host === nonce) {
@@ -120,6 +144,7 @@ export async function hostPairing(code, me, { signal } = {}) {
         }
       } catch (e) { /* ignore malformed traffic */ }
     });
+    const poller = setInterval(() => sub.refresh(), 4000);
     // Announce ourselves so a guest who opened the channel first can reply to the right host.
     const announce = () => publish(topic, JSON.stringify({ t: 'host', nonce, pub })).catch(() => {});
     announce();
@@ -133,9 +158,9 @@ export async function joinPairing(code, me) {
   const { kp, pub } = await keyPair();
   return new Promise((resolve, reject) => {
     let done = false, secret = null, asked = false;
-    const finish = (err, val) => { if (done) return; done = true; close(); clearTimeout(timer); err ? reject(err) : resolve(val); };
+    const finish = (err, val) => { if (done) return; done = true; sub.close(); clearInterval(poller); clearTimeout(timer); err ? reject(err) : resolve(val); };
     const timer = setTimeout(() => finish(new Error('The lesson device didn’t answer. Check the code is still on its screen.')), 60000);
-    const close = subscribe(topic, Date.now() / 1000 - 300, async text => {
+    const sub = subscribe(topic, Date.now() / 1000 - 300, async text => {
       try {
         const m = JSON.parse(text);
         if (m.t === 'host' && !asked) {
@@ -149,5 +174,6 @@ export async function joinPairing(code, me) {
         }
       } catch (e) { /* ignore malformed traffic */ }
     });
+    const poller = setInterval(() => sub.refresh(), 4000);
   });
 }

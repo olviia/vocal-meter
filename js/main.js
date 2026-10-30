@@ -6,7 +6,7 @@ import { CAL_STEPS, detectSegments, toReferenceScale } from './calibration.js';
 import { encodeQR, qrToSvg } from './qr.js';
 import { S, commit, onChange } from './state.js';
 import { newCode, normalizeCode, hostPairing, joinPairing } from './link.js';
-import { sync, connect, unlink, shareOwnRecording, tryCompute, VERDICT } from './sync.js';
+import { sync, connect, unlink, shareOwnRecording, tryCompute, refresh as refreshRelay, VERDICT } from './sync.js';
 
 const RES_OFFSET = 40; // resonance shown = singer's-formant ratio (dB) + 40
 const appUrl = () => location.origin + location.pathname;
@@ -190,7 +190,8 @@ export function mount(root) {
         const segs = detectSegments(rec);
         const n = Math.min(segs.length, 12);
         const step = CAL_STEPS[Math.min(n, 11)];
-        setCal(0.08 + 0.84 * (n / 12), n < 12 ? `Note ${n + 1} of 12 · “${step.vowel}” ${step.level}` : 'Got all 12 notes');
+        const otherDone = S.peerSession && Math.abs(S.peerSession.at - at) < 15 * 60 ? ` · ${peer} done ✓` : '';
+        setCal(0.08 + 0.84 * (n / 12), (n < 12 ? `Note ${n + 1} of 12 · “${step.vowel}” ${step.level}` : 'Got all 12 notes') + otherDone);
         const last = rec.at(-1), lastVoiced = rec.findLast(f => f.voiced);
         const quietFor = last && lastVoiced ? last.t - lastVoiced.t : 0;
         const elapsed = (performance.now() - t0) / 1000;
@@ -205,30 +206,44 @@ export function mount(root) {
     S.calSession = { at, segments };
     commit();
 
-    // 3 · exchange
-    setCal(0.95, `Waiting for ${peer}…`);
-    try { await shareOwnRecording(); }
-    catch (e) { return end(`Couldn’t reach the relay: ${e.message}. Check the internet connection and try again.`); }
+    // 3 · exchange: send ours, wait for theirs, compare.
+    // Each device sends its 12 note summaries (encrypted) through the relay. The phone can only
+    // be converted once both are in, so whoever finishes first waits for the other — up to 3 min.
+    const WAIT_MS = 3 * 60 * 1000;
+    const before = S.calibration ? S.calibration.at : 0;
+    const peerHere = () => S.peerSession && Math.abs(S.peerSession.at - at) < 15 * 60;
+    let sent = false;
     const result = await new Promise(resolve => {
-      const onSynced = () => done('synced');
+      const t0w = Date.now();
       const onFailed = e => done('failed', e.detail.reason);
-      const t = setTimeout(() => done('timeout'), 3 * 60 * 1000);
-      const poll = setInterval(() => { if (cancelled) done('cancelled'); }, 300);
+      sync.addEventListener('failed', onFailed);
+      const tick = setInterval(() => {
+        if (cancelled) return done('cancelled');
+        if (S.calibration && S.calibration.at > before) return done('synced');
+        const left = Math.max(0, WAIT_MS - (Date.now() - t0w));
+        if (!left) return done('timeout');
+        const mmss = `${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, '0')}`;
+        if (!sent) setCal(0.93, 'Sending your notes…');
+        else if (!peerHere()) setCal(0.95, `Sent ✓ · waiting for ${peer}’s notes · ${mmss}`);
+        else setCal(0.98, 'Comparing both recordings…');
+      }, 250);
+      const ask = setInterval(() => { refreshRelay(); tryCompute(); }, 4000);
       function done(kind, reason) {
-        clearTimeout(t); clearInterval(poll);
-        sync.removeEventListener('synced', onSynced); sync.removeEventListener('failed', onFailed);
+        clearInterval(tick); clearInterval(ask);
+        sync.removeEventListener('failed', onFailed);
         resolve({ kind, reason });
       }
-      sync.addEventListener('synced', onSynced);
-      sync.addEventListener('failed', onFailed);
-      tryCompute(); // the other device may have finished first
+      shareOwnRecording()
+        .then(() => { sent = true; refreshRelay(); tryCompute(); })
+        .catch(e => done('offline', e.message));
     });
     if (result.kind === 'synced') {
       setCal(1, 'Synced ✓');
       end(null, true);
       setTimeout(renderLink, 2500);
     } else if (result.kind === 'failed') end(`Calibration didn’t work: ${result.reason} Both devices must hear the same singing — try again.`);
-    else if (result.kind === 'timeout') end(`No recording arrived from ${peer}. Press Calibrate on both devices at the same time.`);
+    else if (result.kind === 'timeout') end(`${peer}’s notes didn’t arrive within 3 minutes. Make sure Calibrate was pressed on ${peer} too and it finished its 12 notes, then try again.`);
+    else if (result.kind === 'offline') end(`Couldn’t send your notes: ${result.reason}. Check the internet connection and try again.`);
     else end('Calibration cancelled');
   }
 
