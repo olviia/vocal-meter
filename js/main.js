@@ -273,8 +273,10 @@ export function mount(root) {
       loud.set(level + DISPLAY_OFFSET, live, out);
       res.set(ring + RES_OFFSET, live, out);
       const last3 = engine.recent(3);
+      const dead = last3.length > 100 && last3.every(f => f.levelDb < -150);
       const gated = last3.length > 60 && last3.filter(f => f.levelDb < -150).length > last3.length * 0.2;
-      if (engine.recent(1).some(f => f.peak >= 0.98)) msg = 'Too loud for the mic — move it further away.';
+      if (dead) msg = `No sound from “${engine.trackLabel || 'the microphone'}”. In the browser’s site settings choose the real microphone (e.g. Microphone Array), then reopen the app.`;
+      else if (engine.recent(1).some(f => f.peak >= 0.98)) msg = 'Too loud for the mic — move it further away.';
       else if (gated) msg = 'This microphone switches itself off between sounds (a noise gate). Turn off noise suppression / noise gate in Nahimic or the Realtek audio settings — it distorts soft notes.';
       else if (out) msg = 'Louder or softer than the calibration covered — numbers are approximate.';
     }

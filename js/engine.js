@@ -28,10 +28,21 @@ export class Engine extends EventTarget {
 
   async _start() {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser has no microphone access. Use Chrome.');
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
-      video: false,
-    });
+    const RAW = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
+    let stream = await navigator.mediaDevices.getUserMedia({ audio: RAW, video: false });
+    // Prefer the real microphone. Audio software (Nahimic / MSI Sound Tune, voice changers, …)
+    // installs virtual microphones that process the voice — or go silent when their effects are off.
+    const VIRTUAL = /virtual|sound tune|nahimic|voicemeeter|vb-audio|cable|stereo mix|line \(|broadcast|krisp|nvidia/i;
+    try {
+      const mics = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput' && d.deviceId !== 'communications');
+      const current = stream.getAudioTracks()[0].label;
+      const real = mics.filter(d => d.label && !VIRTUAL.test(d.label) && d.deviceId !== 'default');
+      if (VIRTUAL.test(current) && real.length) {
+        const pick = real.find(d => /array|built-?in|internal|realtek/i.test(d.label)) || real[0];
+        stream.getTracks().forEach(t => t.stop());
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { ...RAW, deviceId: { exact: pick.deviceId } }, video: false });
+      }
+    } catch (e) { /* keep the browser's choice */ }
     const track = stream.getAudioTracks()[0];
     this.settings = (track.getSettings && track.getSettings()) || {};
     this.trackLabel = track.label || '';
