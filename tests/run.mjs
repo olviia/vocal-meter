@@ -1,7 +1,8 @@
 // Node tests for the pure modules: node tests/run.mjs
 import { FrameAnalyzer, FFT, summarize, hzToCents, metricsFromBands, NB, BAND_CENTERS } from '../js/dsp.js';
 import { detectSegments, alignSegments, fitCalibration, applyCalibration, toReferenceScale } from '../js/calibration.js';
-import { pack, unpack, calPayload, readPayload, defaultState } from '../js/store.js';
+import { segToWire, segFromWire, defaultState } from '../js/store.js';
+import { seal, unseal, linkTopic, newCode, normalizeCode } from '../js/link.js';
 import { encodeQR, totalCodewords, maxBytes } from '../js/qr.js';
 import { writeFileSync } from 'node:fs';
 
@@ -150,13 +151,20 @@ function micAGC(sig) {
   check('auto-gain mic → poor verdict', cal.ok && cal.verdict === 'poor', `${cal.verdict}: ${cal.problems?.[0] || ''} slope=${cal.stats?.slope.toFixed(2)}`);
 }
 
-// ---- wire format round trip
+// ---- encrypted link messages
 {
-  const st = defaultState();
-  st.calSession = { at: 1761820000, segments: globalThis.__segs };
-  const str = await pack(calPayload(st));
-  const back = readPayload(await unpack(str));
-  check('pack/unpack calibration', back.segments.length === 12 && Math.abs(back.segments[3].level - globalThis.__segs[3].level) < 0.06, `${str.length} chars`);
+  const secret = 'q2v8sY1bC0x3n9Lm4Pz7Rt6Wk5Jh2Gf1Dd0Ss9Aa8E';
+  const msg = { t: 'cal', at: 1761820000, s: globalThis.__segs.map(segToWire) };
+  const text = await seal(secret, msg);
+  const back = await unseal(secret, text);
+  check('seal/unseal round trip', back.s.length === 12 && Math.abs(segFromWire(back.s[3]).level - globalThis.__segs[3].level) < 0.06, `${text.length} chars (relay limit 4096)`);
+  check('calibration message fits relay limit', text.length < 4000);
+  let rejected = false;
+  try { await unseal(secret.replace('q', 'r'), text); } catch (e) { rejected = true; }
+  check('wrong key cannot read it', rejected);
+  check('link topic is stable and opaque', (await linkTopic(secret)) === (await linkTopic(secret)) && !(await linkTopic(secret)).includes(secret.slice(0, 6)));
+  const c = newCode();
+  check('code format + normalisation', /^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(c) && normalizeCode(c.toLowerCase().replace('-', ' ')) === c, c);
 }
 
 // ---- QR: table consistency + matrices for the Python decoder check

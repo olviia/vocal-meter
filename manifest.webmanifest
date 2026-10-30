@@ -2,7 +2,7 @@
   "name": "Vocal Meter",
   "short_name": "Vocal Meter",
   "description": "Loudness and resonance meter for singing practice.",
-  "start_url": "./#/meter",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

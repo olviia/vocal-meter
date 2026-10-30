@@ -1,32 +1,29 @@
 # Vocal Meter
 
-Loudness and resonance meter for singing practice. Installable web app (PWA): works offline, keeps all data on the device.
+Loudness and resonance meter for singing practice — one screen, always listening. Installable web app (PWA), works offline; calibration data stays on each device.
 
 Live at **https://olviia.github.io/vocal-meter/**
 
-## Screens
+## Use
 
-- **Meter** – two numbers side by side, Loudness and Resonance, each riding up and down its own scale like a tuner. Grey = not singing (last value held).
-- **Calibrate** – makes the practice phone show the numbers the lesson device would show. The latest calibration is saved and used on every launch; **Recalibrate** replaces it.
-
-## Calibrating (once, or whenever the setup changes)
-
-1. Laptop and phone side by side, about 1 m from you, both on **Calibrate**.
-2. Press **Start** on both. Stay silent 3 s (room noise is measured), then sing the 12 listed notes on one comfortable pitch, ~3 s each with a breath of silence between.
-3. Press **Finish** on both. On the laptop press **Send to phone** and scan the QR code with the phone’s camera (or use Copy link / Save as file).
-4. The phone shows the verdict: Reliable, Usable with care, or Not reliable (with the reason).
+- **Loudness** and **Resonance** ride up and down their scales like a tuner. Yellow while you sing, grey when you stop.
+- **Link a device** (once): on the laptop choose *lesson device — show code*; on the phone scan the QR code or choose *practice phone — enter code*. Each side then shows *Linked to …* with **Unlink**.
+- **Calibrate**: press it on both devices, placed side by side ~1 m away. Stay quiet for 3 s, then sing the 12 notes the button asks for (~3 s each, a breath between). The button fills as notes are captured; when both recordings are processed a **✓ Synced** badge appears (tap it for details).
+- The phone then shows the laptop’s numbers. The latest successful calibration is used on every launch until you recalibrate; before the first one, the built-in default (raw readings) applies.
 
 On the MSI laptop first switch off microphone effects in **Nahimic** and **Audio enhancements** in Windows sound settings.
 
-Practising in a different room: **Calibrate → Re-measure room noise**.
+## How the devices talk
+
+GitHub Pages only serves files, so messages go through the public relay **ntfy.sh**. Pairing uses an ECDH key exchange mixed with the 8-character code; afterwards every message is AES-GCM encrypted with the shared key on a private channel derived from it, so the relay only carries scrambled data. Only per-note acoustic summaries are sent (≈1.5 KB per calibration). The results are computed and stored on each device (browser storage), never in the cloud.
 
 ## What the numbers mean
 
 - **Loudness** – relative dB (dBFS + 100), not a sound-level-meter reading.
-- **Resonance** – energy in ≈1.8–3.5 kHz (singer’s formant) vs ≈70 Hz–1.8 kHz, in dB, shifted by +40 so it reads as a positive number. Higher = more ring. It varies with vowel and pitch, so compare like with like.
+- **Resonance** – energy in ≈1.8–3.5 kHz (singer’s formant) vs ≈70 Hz–1.8 kHz, in dB, +40 so it reads positive. Higher = more ring. Varies with vowel and pitch.
 
 ## Development
 
-No build step. `python3 -m http.server` in this folder, open in Chrome. Tests: `node tests/run.mjs`.
+No build step: `python3 -m http.server`, open in Chrome. Tests: `node tests/run.mjs`. To use another ntfy-compatible relay, set `localStorage['vm-relay']`.
 
 QR encoder adapted from Project Nayuki’s QR Code generator (MIT).

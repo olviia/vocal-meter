@@ -1,11 +1,10 @@
 // Offline support: always try the network first (so updates show up immediately and files
 // never mix versions); fall back to the cached copy when offline.
-const VERSION = 'vm-4';
+const VERSION = 'vm-5';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/ui.js', 'js/state.js', 'js/store.js', 'js/dsp.js', 'js/calibration.js',
-  'js/calibrate-core.js', 'js/engine.js', 'js/capture-worklet.js', 'js/qr.js', 'js/transfer.js',
-  'js/views/meter.js', 'js/views/calibrate.js',
+  'js/app.js', 'js/main.js', 'js/ui.js', 'js/state.js', 'js/store.js', 'js/dsp.js', 'js/calibration.js',
+  'js/engine.js', 'js/capture-worklet.js', 'js/qr.js', 'js/link.js', 'js/sync.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png',
 ];
 

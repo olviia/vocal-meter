@@ -11,13 +11,22 @@ export class Engine extends EventTarget {
     this.noise = null;
   }
 
+  // True when audio is flowing; false while the browser waits for a first tap.
+  get listening() { return this.running && this.ctx && this.ctx.state === 'running'; }
+  resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume().catch(() => {}); }
+
   setNoise(profile) {
     this.noise = profile;
     if (this.analyzer) this.analyzer.setNoise(profile);
   }
 
   async start() {
-    if (this.running) return;
+    if (this.running || this.starting) return this.starting;
+    this.starting = this._start().finally(() => { this.starting = null; });
+    return this.starting;
+  }
+
+  async _start() {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser has no microphone access. Use Chrome.');
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
@@ -27,7 +36,8 @@ export class Engine extends EventTarget {
     this.settings = (track.getSettings && track.getSettings()) || {};
     this.trackLabel = track.label || '';
     const ctx = new AudioContext({ latencyHint: 'interactive' });
-    if (ctx.state === 'suspended') await ctx.resume();
+    ctx.onstatechange = () => this.dispatchEvent(new Event('state'));
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {}); // may need a tap first (autoplay rules)
     await ctx.audioWorklet.addModule(new URL('./capture-worklet.js', import.meta.url));
     const src = ctx.createMediaStreamSource(stream);
     const node = new AudioWorkletNode(ctx, 'capture', {
