@@ -195,3 +195,4 @@ dialog.modal header { display: flex; justify-content: space-between; align-items
 .qr svg { width: 100%; height: auto; display: block; }
 
 #toast[hidden] { display: none; }
+#main:focus, #main:focus-visible { outline: none; }

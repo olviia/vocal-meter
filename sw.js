@@ -1,5 +1,5 @@
 // Offline support: cache the app files; serve from cache, refresh in the background.
-const VERSION = 'vm-1';
+const VERSION = 'vm-2';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/ui.js', 'js/state.js', 'js/store.js', 'js/dsp.js', 'js/calibration.js',
