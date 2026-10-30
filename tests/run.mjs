@@ -167,6 +167,16 @@ function micAGC(sig) {
   check('code format + normalisation', /^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(c) && normalizeCode(c.toLowerCase().replace('-', ' ')) === c, c);
 }
 
+// ---- only recordings of the same singing are paired
+{
+  const { sameSession } = await import('../js/sync.js');
+  const rec = (start, n = 12) => ({ at: start, segments: Array.from({ length: n }, (_, i) => ({ t0: start + 3 + i * 4.5, t1: start + 6 + i * 4.5 })) });
+  const laptopOld = rec(1000), phoneNew = rec(1600), laptopNew = rec(1602);
+  check('old recording is not paired with a new one', !sameSession(laptopOld, phoneNew));
+  check('simultaneous recordings are paired', sameSession(laptopNew, phoneNew));
+  check('a device that missed notes still pairs', sameSession(rec(1602, 9), phoneNew));
+}
+
 // ---- QR: table consistency + matrices for the Python decoder check
 {
   const tc = [1, 7, 10, 25, 40].map(totalCodewords);

@@ -63,11 +63,21 @@ export async function unlink() {
   dropLink();
 }
 
+// Two recordings belong together only if they captured the same singing, i.e. their time spans
+// overlap for most of their length. (Device clocks agree to within a few seconds.)
+export function sameSession(a, b) {
+  if (!a?.segments?.length || !b?.segments?.length) return false;
+  const span = r => [r.segments[0].t0, r.segments.at(-1).t1];
+  const [a0, a1] = span(a), [b0, b1] = span(b);
+  const overlap = Math.min(a1, b1) - Math.max(a0, b0);
+  return overlap > 0.5 * Math.min(a1 - a0, b1 - b0);
+}
+
 // Compute when both recordings are present and were made at about the same time.
 export function tryCompute() {
   const own = S.calSession, peer = S.peerSession, link = S.link;
   if (!own || !peer || !link) return;
-  if (Math.abs(own.at - peer.at) > MATCH_WINDOW_S) return;
+  if (!sameSession(own, peer)) return; // an older recording from the other device — keep waiting
   const basedOn = `${own.at}:${peer.at}`;
   if (S.calibration?.basedOn === basedOn) return;
 

@@ -6,7 +6,7 @@ import { CAL_STEPS, detectSegments, toReferenceScale } from './calibration.js';
 import { encodeQR, qrToSvg } from './qr.js';
 import { S, commit, onChange } from './state.js';
 import { newCode, normalizeCode, hostPairing, joinPairing } from './link.js';
-import { sync, connect, unlink, shareOwnRecording, tryCompute, refresh as refreshRelay, VERDICT } from './sync.js';
+import { sync, connect, unlink, shareOwnRecording, tryCompute, sameSession, refresh as refreshRelay, VERDICT } from './sync.js';
 
 const RES_OFFSET = 40; // resonance shown = singer's-formant ratio (dB) + 40
 const appUrl = () => location.origin + location.pathname;
@@ -190,7 +190,7 @@ export function mount(root) {
         const segs = detectSegments(rec);
         const n = Math.min(segs.length, 12);
         const step = CAL_STEPS[Math.min(n, 11)];
-        const otherDone = S.peerSession && Math.abs(S.peerSession.at - at) < 15 * 60 ? ` · ${peer} done ✓` : '';
+        const otherDone = S.peerSession && S.peerSession.at > at - 120 ? ` · ${peer} done ✓` : '';
         setCal(0.08 + 0.84 * (n / 12), (n < 12 ? `Note ${n + 1} of 12 · “${step.vowel}” ${step.level}` : 'Got all 12 notes') + otherDone);
         const last = rec.at(-1), lastVoiced = rec.findLast(f => f.voiced);
         const quietFor = last && lastVoiced ? last.t - lastVoiced.t : 0;
@@ -211,7 +211,7 @@ export function mount(root) {
     // be converted once both are in, so whoever finishes first waits for the other — up to 3 min.
     const WAIT_MS = 3 * 60 * 1000;
     const before = S.calibration ? S.calibration.at : 0;
-    const peerHere = () => S.peerSession && Math.abs(S.peerSession.at - at) < 15 * 60;
+    const peerHere = () => sameSession(S.calSession, S.peerSession);
     let sent = false;
     const result = await new Promise(resolve => {
       const t0w = Date.now();
