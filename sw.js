@@ -1,5 +1,6 @@
-// Offline support: cache the app files; serve from cache, refresh in the background.
-const VERSION = 'vm-3';
+// Offline support: always try the network first (so updates show up immediately and files
+// never mix versions); fall back to the cached copy when offline.
+const VERSION = 'vm-4';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/ui.js', 'js/state.js', 'js/store.js', 'js/dsp.js', 'js/calibration.js',
@@ -18,9 +19,16 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
-  e.respondWith(caches.open(VERSION).then(async cache => {
-    const cached = await cache.match(e.request, { ignoreSearch: true });
-    const fresh = fetch(e.request).then(res => { if (res.ok) cache.put(e.request, res.clone()); return res; }).catch(() => cached);
-    return cached || fresh;
-  }));
+  e.respondWith((async () => {
+    const cache = await caches.open(VERSION);
+    try {
+      const res = await fetch(e.request, { cache: 'no-cache' });
+      if (res.ok) cache.put(e.request, res.clone());
+      return res;
+    } catch (err) {
+      const cached = await cache.match(e.request, { ignoreSearch: true });
+      if (cached) return cached;
+      throw err;
+    }
+  })());
 });
