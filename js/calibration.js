@@ -1,6 +1,6 @@
 // Two-device calibration: find sung notes on each device, pair them up, and learn how to
 // convert one device's readings into the other's. Pure functions, tested in Node.
-import { NB, median, hzToCents, metricsFromBands } from './dsp.js';
+import { NB, median, hzToCents, metricsFromBands, medianHarm, ringOf } from './dsp.js';
 
 export const CAL_STEPS = (() => {
   const vowels = ['ah', 'ee', 'oo', 'eh'];
@@ -34,17 +34,19 @@ export function detectSegments(frames, { minDur = 1.0, maxGap = 0.2 } = {}) {
         level: median(core.map(f => f.levelDb)),
         cents: median(core.map(f => hzToCents(f.f0))),
         bands,
+        harm: medianHarm(core),
       };
     });
 }
 
 // Pair notes from two recordings of the same performance. Device clocks differ by an unknown
 // constant, so try every pair as the anchor and keep the offset that matches the most notes.
-export function alignSegments(src, dst, { tolT = 0.5, tolCents = 80 } = {}) {
+export function alignSegments(src, dst, { tolT = 0.5, tolCents = 80, maxShift = 30 } = {}) {
   let best = [];
   for (const a of src) {
     for (const b of dst) {
       const shift = b.t0 - a.t0;
+      if (Math.abs(shift) > maxShift) continue; // different recordings, not a clock difference
       if (Math.abs(a.cents - b.cents) > tolCents) continue;
       const pairs = [];
       const used = new Set();
@@ -91,9 +93,9 @@ export function fitCalibration(pairs) {
 
   const ringErr = [], brightErr = [];
   for (const [s, d] of pairs) {
-    const pred = metricsFromBands(s.bands.map((v, b) => v + bandOffset[b]));
-    const real = metricsFromBands(d.bands);
-    ringErr.push(pred.ring - real.ring);
+    const shift = arr => arr && arr.map((v, b) => v + bandOffset[b]);
+    const pred = metricsFromBands(shift(s.bands)), real = metricsFromBands(d.bands);
+    ringErr.push(ringOf({ bands: shift(s.bands), harm: s.harm && d.harm ? shift(s.harm) : null }) - ringOf({ bands: d.bands, harm: s.harm && d.harm ? d.harm : null }));
     brightErr.push(pred.bright - real.bright);
   }
 
@@ -126,11 +128,13 @@ export function fitCalibration(pairs) {
 // Convert a reference measured on the source device into this device's numbers.
 export function applyCalibration(cal, ref) {
   const bands = ref.bands.map((v, b) => v + cal.bandOffset[b]);
+  const harm = ref.harm ? ref.harm.map((v, b) => v + cal.bandOffset[b]) : null;
   return {
     ...ref,
     level: cal.level.a * ref.level + cal.level.b,
-    bands,
+    bands, harm,
     ...metricsFromBands(bands),
+    ring: ringOf({ bands, harm }),
     converted: true,
     outOfRange: ref.level < cal.stats.rangeLo - 3 || ref.level > cal.stats.rangeHi + 3,
   };
@@ -138,13 +142,16 @@ export function applyCalibration(cal, ref) {
 
 // The reverse direction: express this device's live reading in the lesson device's numbers,
 // so the practice phone shows what the lesson device would have shown.
-export function toReferenceScale(cal, { level, bands }) {
+export function toReferenceScale(cal, { level, bands, harm }) {
   const refBands = bands.map((v, b) => v - cal.bandOffset[b]);
+  const refHarm = harm ? harm.map((v, b) => v - cal.bandOffset[b]) : null;
   const refLevel = (level - cal.level.b) / cal.level.a;
   return {
     level: refLevel,
     bands: refBands,
+    harm: refHarm,
     ...metricsFromBands(refBands),
+    ring: ringOf({ bands: refBands, harm: refHarm }),
     outOfRange: refLevel < cal.stats.rangeLo - 3 || refLevel > cal.stats.rangeHi + 3,
   };
 }

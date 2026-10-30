@@ -81,6 +81,27 @@ for (const f0 of [98, 147, 220, 330, 440, 660, 880, 1046]) {
   check('level drops 20 dB with amp ÷10', Math.abs(ringy.level - quiet.level - 20) < 0.3, (ringy.level - quiet.level).toFixed(2));
 }
 
+// ---- breath noise must not read as resonance
+{
+  const add = (sig, noiseAmp, seed = 7) => {
+    const out = Float32Array.from(sig);
+    let x = seed;
+    for (let i = 0; i < out.length; i++) { x = (x * 16807) % 2147483647; out[i] += noiseAmp * ((x / 2147483647) * 2 - 1); }
+    return out;
+  };
+  for (const f0 of [196, 330, 523]) {
+    const clean = voice(f0, 0.8, { amp: 0.05, ringGain: 0 });
+    const a = summarize(analyzeSignal(clean).slice(-12));
+    const b = summarize(analyzeSignal(add(clean, 0.012)).slice(-12));   // breathy: broadband air noise
+    const bandRingA = metricsFromBands(a.bands).ring, bandRingB = metricsFromBands(b.bands).ring;
+    check(`breathy ${f0} Hz: resonance stays put (old method rose)`, b && Math.abs(b.ring - a.ring) < 1 && bandRingB - bandRingA > Math.abs(b.ring - a.ring) + 1,
+      `harmonic ${a.ring.toFixed(1)} → ${b.ring.toFixed(1)}; old whole-band ${bandRingA.toFixed(1)} → ${bandRingB.toFixed(1)}`);
+  }
+  const plain = summarize(analyzeSignal(voice(220, 0.6, { ringGain: 0 })).slice(-10));
+  const ringy = summarize(analyzeSignal(voice(220, 0.6, { ringGain: 1.2 })).slice(-10));
+  check('harmonic resonance still rises with real ring', ringy.ring - plain.ring > 6, `${plain.ring.toFixed(1)} → ${ringy.ring.toFixed(1)}`);
+}
+
 // ---- silence and noise are not voiced
 {
   const noise = new Float32Array(SR / 2);
@@ -124,12 +145,12 @@ function micAGC(sig) {
 {
   const { src, dst } = protocol(micB);
   const segA = detectSegments(analyzeSignal(src, new FrameAnalyzer(SR), 1000));
-  const segB = detectSegments(analyzeSignal(dst, new FrameAnalyzer(SR), 5003.7)); // other clock
+  const segB = detectSegments(analyzeSignal(dst, new FrameAnalyzer(SR), 1003.7)); // other clock, 3.7 s ahead
   check('12 notes detected on device A', segA.length === 12, `${segA.length}`);
   check('12 notes detected on device B', segB.length === 12, `${segB.length}`);
 
   const pairs = alignSegments(segA, segB.slice(1)); // B missed the first note
-  check('alignment survives a missed note', pairs.length === 11 && pairs.every(([a, b]) => Math.abs(b.t0 - a.t0 - 4003.7) < 0.3), `${pairs.length} pairs`);
+  check('alignment survives a missed note', pairs.length === 11 && pairs.every(([a, b]) => Math.abs(b.t0 - a.t0 - 3.7) < 0.3), `${pairs.length} pairs`);
 
   const cal = fitCalibration(alignSegments(segA, segB));
   check('linear mic difference → good verdict', cal.verdict === 'good', `${cal.verdict} ${JSON.stringify(cal.stats, (k, v) => typeof v === 'number' ? +v.toFixed(2) : v)}`);

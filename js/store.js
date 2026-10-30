@@ -36,8 +36,8 @@ export function saveState(state) {
 // ---------- calibration segments, compact ----------
 const r1 = x => Math.round(x * 10);
 const u1 = x => x / 10;
-export const segToWire = s => [Math.round(s.t0 * 1000), Math.round(s.t1 * 1000), Math.round(s.cents), r1(s.level), s.bands.map(r1)];
-export const segFromWire = ([t0, t1, cents, level, bands]) => ({ t0: t0 / 1000, t1: t1 / 1000, cents, level: u1(level), bands: bands.map(u1) });
+export const segToWire = s => [Math.round(s.t0 * 1000), Math.round(s.t1 * 1000), Math.round(s.cents), r1(s.level), s.bands.map(r1), s.harm ? s.harm.map(r1) : 0];
+export const segFromWire = ([t0, t1, cents, level, bands, harm]) => ({ t0: t0 / 1000, t1: t1 / 1000, cents, level: u1(level), bands: bands.map(u1), harm: harm ? harm.map(u1) : null });
 
 // ---------- bytes helpers ----------
 export const b64u = bytes => {

@@ -1,7 +1,7 @@
 // The single screen: always-on meter, Calibrate button, link status.
 import { h, toast, modal, fmtDate, DISPLAY_OFFSET } from './ui.js';
 import { engine, recordFor } from './engine.js';
-import { summarize, metricsFromBands, median, NB } from './dsp.js';
+import { summarize, median, NB } from './dsp.js';
 import { CAL_STEPS, detectSegments, toReferenceScale } from './calibration.js';
 import { encodeQR, qrToSvg } from './qr.js';
 import { S, commit, onChange } from './state.js';
@@ -263,16 +263,19 @@ export function mount(root) {
       const voiced = recent.filter(f => f.voiced);
       const live = voiced.length >= 3 && engine.latest.t - voiced.at(-1).t < 0.3;
       const sum = live ? summarize(recent) : null;
-      let level = live ? sum.level : engine.latest.levelDb;
-      let ring = live ? metricsFromBands(sum.bands).ring : NaN;
-      let out = false;
-      if (c) {
-        if (live) { const r = toReferenceScale(c, sum); level = r.level; ring = r.ring; out = r.outOfRange; }
-        else level = (level - c.level.b) / c.level.a;
+      // While you sing: live values. Between notes: the last sung values stay, greyed out —
+      // background noise is never shown as a reading.
+      let level = NaN, ring = NaN, out = false;
+      if (live) {
+        level = sum.level; ring = sum.ring;
+        if (c) { const r = toReferenceScale(c, sum); level = r.level; ring = r.ring; out = r.outOfRange; }
       }
       loud.set(level + DISPLAY_OFFSET, live, out);
-      res.set(live ? ring + RES_OFFSET : NaN, live, out);
+      res.set(ring + RES_OFFSET, live, out);
+      const last3 = engine.recent(3);
+      const gated = last3.length > 60 && last3.filter(f => f.levelDb < -150).length > last3.length * 0.2;
       if (engine.recent(1).some(f => f.peak >= 0.98)) msg = 'Too loud for the mic — move it further away.';
+      else if (gated) msg = 'This microphone switches itself off between sounds (a noise gate). Turn off noise suppression / noise gate in Nahimic or the Realtek audio settings — it distorts soft notes.';
       else if (out) msg = 'Louder or softer than the calibration covered — numbers are approximate.';
     }
     status.textContent = msg;

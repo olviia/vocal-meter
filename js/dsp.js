@@ -62,14 +62,29 @@ export function summarize(frames) {
   if (!v.length) return null;
   const bands = new Array(NB);
   for (let b = 0; b < NB; b++) bands[b] = median(v.map(f => f.bandDb[b]));
+  const harm = medianHarm(v);
   return {
     n: v.length,
     level: median(v.map(f => f.levelDb)),
     cents: median(v.map(f => hzToCents(f.f0))),
     bands,
+    harm,
     ...metricsFromBands(bands),
+    ring: ringOf({ bands, harm }),
   };
 }
+
+export function medianHarm(frames) {
+  const h = frames.filter(f => f.harmDb);
+  if (!h.length) return null;
+  const out = new Array(NB);
+  for (let b = 0; b < NB; b++) out[b] = median(h.map(f => f.harmDb[b]));
+  return out;
+}
+
+// Resonance (singer's-formant ratio) from harmonic energy only, so breath noise doesn't count.
+// Falls back to whole-band energy for data recorded before harmonic analysis existed.
+export const ringOf = ({ bands, harm }) => metricsFromBands(harm || bands).ring;
 
 // ---------- FFT (radix-2, in place) ----------
 export class FFT {
@@ -139,6 +154,8 @@ export class FrameAnalyzer {
     this.tauMin = Math.max(2, Math.floor(sampleRate / fmax));
     this.tauMax = Math.ceil(sampleRate / fmin);
     this.d = new Float64Array(this.tauMax + 2);
+    this.pow = new Float64Array(fftSize / 2);
+    this.gapBuf = new Float64Array(fftSize / 2);
     this.noisePow = null;   // per-band noise power to subtract (from the noise check)
     this.noiseLevelDb = -80; // voicing needs to be clearly above this
   }
@@ -197,19 +214,56 @@ export class FrameAnalyzer {
     const { re, im, win } = this;
     for (let i = 0; i < N; i++) { re[i] = buf[off + i] * win[i]; im[i] = 0; }
     this.fft.transform(re, im);
+    const P = this.pow, scale = 2 * this.winNorm;
+    for (let k = 0; k < N / 2; k++) P[k] = (re[k] * re[k] + im[k] * im[k]) * scale;
     const bandPow = new Float64Array(NB);
     const bandDb = new Float32Array(NB);
     for (let b = 0; b < NB; b++) {
       const [lo, hi] = this.bandBins[b];
       let p = 0;
-      for (let k = lo; k <= hi; k++) p += re[k] * re[k] + im[k] * im[k];
-      p *= 2 * this.winNorm;
+      for (let k = lo; k <= hi; k++) p += P[k];
       bandPow[b] = p;
       const clean = this.noisePow ? Math.max(p - this.noisePow[b], p * 0.03) : p;
       bandDb[b] = toDb(clean);
     }
 
     const voiced = f0 > 0 && aper < 0.2 && levelDb > Math.max(-75, this.noiseLevelDb + 10);
-    return { t, levelDb, peak, f0, aper, voiced, bandPow, bandDb };
+    const harmDb = voiced ? this.harmonicBands(P, f0) : null;
+    return { t, levelDb, peak, f0, aper, voiced, bandPow, bandDb, harmDb };
+  }
+
+  // Energy at each harmonic of f0 (peak ± a few bins) minus the noise level measured in the gaps
+  // either side of it, summed into the 1/3-octave bands. Breath and room noise sit mostly between
+  // harmonics, so they drop out; resonance is computed from this.
+  harmonicBands(P, f0) {
+    const binHz = this.sr / this.fftSize, out = new Float64Array(NB);
+    const maxBin = Math.min(P.length - 4, Math.floor(9000 / binHz));
+    const gap = this.gapBuf;
+    for (let k = 1; ; k++) {
+      const fk = k * f0, c0 = Math.round(fk / binHz);
+      if (c0 + 4 > maxBin) break;
+      let c = c0;                                   // settle on the local peak
+      if (P[c - 1] > P[c]) c--; else if (P[c + 1] > P[c]) c++;
+      const w = fk > 2000 ? 3 : 2;                  // vibrato smears high harmonics a little more
+      let peak = 0;
+      for (let j = c - w; j <= c + w; j++) peak += P[j];
+      // noise floor: median of the bins between this harmonic and its neighbours
+      const half = (f0 / binHz) / 2, lo = Math.max(1, Math.round(c - half)), hi = Math.min(maxBin, Math.round(c + half));
+      let n = 0;
+      for (let j = lo; j <= hi; j++) if (j < c - w - 1 || j > c + w + 1) gap[n++] = P[j];
+      let noise = 0;
+      if (n) { const g = gap.subarray(0, n).sort(); noise = g[n >> 1] * (2 * w + 1); }
+      const hp = Math.max(0, peak - noise);
+      const b = this.bandOf(fk);
+      if (b >= 0) out[b] += hp;
+    }
+    const db = new Float32Array(NB);
+    for (let b = 0; b < NB; b++) db[b] = out[b] > 0 ? toDb(out[b]) : -150;
+    return db;
+  }
+
+  bandOf(f) {
+    for (let b = 0; b < NB; b++) if (f >= BAND_CENTERS[b] / EDGE && f < BAND_CENTERS[b] * EDGE) return b;
+    return -1;
   }
 }
